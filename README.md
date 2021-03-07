@@ -1,4 +1,5 @@
 # jsonrpc2
+[![Go Reference](https://pkg.go.dev/badge/github.com/chronly/jsonrpc2.svg)](https://pkg.go.dev/github.com/chronly/jsonrpc2)
 
 A full implementation of the [JSON-RPC 2.0
 specification](https://www.jsonrpc.org/specification), including support for
