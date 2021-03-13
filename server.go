@@ -49,18 +49,12 @@ func (s *Server) Serve(lis net.Listener) error {
 
 func (s *Server) onConn(conn net.Conn, handler Handler) {
 	// Create a conn
-	cli := &Client{
-		tx:      newTransport(conn),
-		handler: handler,
-		nextID:  atomic.NewInt64(0),
-	}
+	cli := NewClient(conn, handler)
 	if s.OnConn != nil {
 		go s.OnConn(cli)
 	}
 	s.trackClient(cli, true)
 	defer s.trackClient(cli, false)
-
-	cli.processMessages()
 }
 
 func (s *Server) trackListener(lis *net.Listener, add bool) bool {

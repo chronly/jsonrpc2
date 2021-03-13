@@ -38,7 +38,7 @@ func TestJSONRPC2(t *testing.T) {
 	srv := Server{Handler: &router}
 	go srv.Serve(lis)
 
-	cli, err := Dial(lis.Addr().String())
+	cli, err := Dial(lis.Addr().String(), DefaultHandler)
 	require.NoError(t, err)
 
 	resp, err := cli.Invoke(context.Background(), "sum", []int{3, 5, 7})

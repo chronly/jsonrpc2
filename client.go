@@ -4,9 +4,11 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net"
 	"strconv"
 	"sync"
+	"time"
 
 	"go.uber.org/atomic"
 )
@@ -14,36 +16,51 @@ import (
 type Client struct {
 	tx *transport
 
-	// listeners are in-flight messages waiting for a response.
-	// listeners is a map of *string to a chan of transport.
-	// listeners must NEVER close the channel, but rather must delete their
-	// entry from the map and let Go's GC clean up the channel.
+	// listeners holds channels waiting for a response to a specific
+	// message ID. It is implemented a a map of int64 to a chan of
+	// *txObject.
+	//
+	// The channels stored in listeners are NEVER closed, but cleaned up
+	// by the Go GC once the goroutine that populated listeners removes
+	// the entry.
 	listeners sync.Map
 
 	nextID  *atomic.Int64
 	handler Handler
 }
 
-// Dial dials to
-func Dial(target string) (*Client, error) {
+// Dial creates a connection to the target server using TCP. Handler will
+// be invoked for each request received from the other side.
+func Dial(target string, handler Handler) (*Client, error) {
 	var d net.Dialer
 	nc, err := d.Dial("tcp", target)
 	if err != nil {
 		return nil, fmt.Errorf("failed diling to server: %w", err)
 	}
+	return NewClient(nc, handler), nil
+}
+
+// provided io.ReadWriter. The given handler will be invoked for each request
+// and notification that is read over rw.
+//
+// If rw implements io.Closer, it will be closed when the Client is closed.
+func NewClient(rw io.ReadWriter, handler Handler) *Client {
+	if handler == nil {
+		handler = DefaultHandler
+	}
 
 	cli := &Client{
-		tx:      newTransport(nc),
-		handler: DefaultHandler,
+		tx:      newTransport(rw),
+		handler: handler,
 		nextID:  atomic.NewInt64(0),
 	}
 	go cli.processMessages()
-	return cli, nil
+	return cli
 }
 
 // Close closes the underlying transport.
 func (c *Client) Close() error {
-	return c.tx.c.Close()
+	return c.tx.Close()
 }
 
 // processMessages runs in the background and handles incoming messages from
@@ -80,7 +97,14 @@ func (c *Client) processMessages() {
 					continue Objects
 				}
 
-				lis.(chan *txObject) <- msg
+				select {
+				case lis.(chan *txObject) <- msg:
+					// No-op
+				case <-time.After(500 * time.Millisecond):
+					// TODO(rfratto): configurable timeout, log warning / increment metric
+					// when the listener doesn't read the response.
+					break
+				}
 			}
 		}
 
@@ -108,6 +132,8 @@ func (c *Client) handleRequest(req *txRequest) *txResponse {
 		set:          atomic.NewBool(false),
 	}
 	c.handler.ServeRPC(ww, &Request{
+		Notification: req.Notification,
+
 		Method: req.Method,
 		Params: req.Params,
 		Conn:   c,
@@ -118,18 +144,6 @@ func (c *Client) handleRequest(req *txRequest) *txResponse {
 	}
 	return ww.resp
 }
-
-/*
-type ResponseWriter interface {
-	// WriteMessage writes a success response to the client. The value as provided
-	// here will be marshaled to json. An error will be returned if the msg could
-	// not be marshaled to JSON.
-	WriteMessage(msg interface{}) error
-
-	// WriteError writes an error response to the caller.
-	WriteError(errorCode int, err error) error
-}
-*/
 
 type responseWriter struct {
 	notification bool

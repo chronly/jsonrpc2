@@ -28,6 +28,10 @@ type ResponseWriter interface {
 }
 
 type Request struct {
+	// Notification indicates an asynchronous call from the server and responses
+	// should not be written.
+	Notification bool
+
 	Method string
 	Params json.RawMessage
 	Conn   Conn

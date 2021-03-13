@@ -4,22 +4,24 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
-	"net"
+	"io"
 )
 
 // transport is a transport for JSON-RPC 2.0 message.
 type transport struct {
-	c net.Conn
+	rw io.ReadWriter
 
 	dec *json.Decoder
 	enc *json.Encoder
 }
 
-func newTransport(c net.Conn) *transport {
+// newTransport can read and write JSON-RPC 2.0 messages over a ReadWriter.
+func newTransport(rw io.ReadWriter) *transport {
 	return &transport{
-		c:   c,
-		dec: json.NewDecoder(c),
-		enc: json.NewEncoder(c),
+		rw: rw,
+
+		dec: json.NewDecoder(rw),
+		enc: json.NewEncoder(rw),
 	}
 }
 
@@ -33,6 +35,15 @@ func (t *transport) ReadMessage() (txMessage, error) {
 // SendMessage sends a message over the transport.
 func (t *transport) SendMessage(msg txMessage) error {
 	return t.enc.Encode(&msg)
+}
+
+// Close closes the transport. If the rw given to newTransport implements
+// io.Closer, it will be closed.
+func (t *transport) Close() error {
+	if c, ok := t.rw.(io.Closer); ok {
+		return c.Close()
+	}
+	return nil
 }
 
 // txMessage is a transport message, which can be batched.
