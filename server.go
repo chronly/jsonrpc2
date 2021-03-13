@@ -8,13 +8,15 @@ import (
 	"go.uber.org/atomic"
 )
 
-// Server is a JSON-RPC 2.0 server.
+// Server is a JSON-RPC 2.0 server that can handle multiple conncurrent
+// connections. For cases where only one connection is needed, use
+// Client instead.
 type Server struct {
 	// Handler is the handler to invoke when receiving a JSON-RPC request.
 	Handler Handler
 
-	// OnConn may be provided to handle new connections.
-	OnConn func(c Conn)
+	// OnClient may be provided to handle new connections.
+	OnClient func(c *Client)
 
 	mut       sync.Mutex
 	listeners map[*net.Listener]struct{}
@@ -22,8 +24,12 @@ type Server struct {
 	shutDown  atomic.Bool
 }
 
-// Serve starts serving clients from a listener. lis will be closed when
-// Serve exits.
+// Serve starts serving connections from a listener. Each new connection
+// will be created as a Client and will start processing messages.
+//
+// lis will be closed when Serve exits.
+//
+// If s.OnConn is non-nil, it will be invoked for each connection received.
 func (s *Server) Serve(lis net.Listener) error {
 	lis = &onceCloseListener{Listener: lis}
 	defer lis.Close()
@@ -50,8 +56,8 @@ func (s *Server) Serve(lis net.Listener) error {
 func (s *Server) onConn(conn net.Conn, handler Handler) {
 	// Create a conn
 	cli := NewClient(conn, handler)
-	if s.OnConn != nil {
-		go s.OnConn(cli)
+	if s.OnClient != nil {
+		go s.OnClient(cli)
 	}
 	s.trackClient(cli, true)
 	defer s.trackClient(cli, false)

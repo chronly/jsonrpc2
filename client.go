@@ -178,7 +178,7 @@ func (c *Client) handleRequest(req *txRequest) *txResponse {
 
 		Method: req.Method,
 		Params: req.Params,
-		Conn:   c,
+		Client: c,
 	})
 
 	if ww.resp.Result == nil {

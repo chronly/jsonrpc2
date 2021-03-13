@@ -34,7 +34,7 @@ type Request struct {
 
 	Method string
 	Params json.RawMessage
-	Conn   Conn
+	Client *Client
 }
 
 // HandlerFunc implements Handler.
