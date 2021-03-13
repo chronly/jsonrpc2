@@ -13,7 +13,7 @@ using Go's standard `net/http` package.
 ## Roadmap
 
 - [x] Bi-directional RPCs
-- [ ] Websockets
+- [x] Websockets
 - [ ] jsonrpc2 to gRPC shim
 
 ## Example

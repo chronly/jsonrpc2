@@ -10,10 +10,28 @@ import (
 	"sync"
 	"time"
 
+	"github.com/go-kit/kit/log"
+	"github.com/go-kit/kit/log/level"
 	"go.uber.org/atomic"
 )
 
+// ClientOpt is an option function that can be passed to Dial and NewClient.
+type ClientOpt func(*Client)
+
+// WithClientLogger sets the Client to use a logger.
+func WithClientLogger(l log.Logger) ClientOpt {
+	return func(c *Client) {
+		if l == nil {
+			l = log.NewNopLogger()
+		} else {
+			c.log = l
+		}
+	}
+}
+
 type Client struct {
+	log log.Logger
+
 	tx *transport
 
 	// listeners holds channels waiting for a response to a specific
@@ -27,6 +45,9 @@ type Client struct {
 
 	nextID  *atomic.Int64
 	handler Handler
+
+	// Done is closed when the underlying connection closes.
+	done chan struct{}
 }
 
 // Dial creates a connection to the target server using TCP. Handler will
@@ -44,15 +65,21 @@ func Dial(target string, handler Handler) (*Client, error) {
 // and notification that is read over rw.
 //
 // If rw implements io.Closer, it will be closed when the Client is closed.
-func NewClient(rw io.ReadWriter, handler Handler) *Client {
+func NewClient(rw io.ReadWriter, handler Handler, opts ...ClientOpt) *Client {
 	if handler == nil {
 		handler = DefaultHandler
 	}
 
 	cli := &Client{
+		log: log.NewNopLogger(),
+
 		tx:      newTransport(rw),
 		handler: handler,
 		nextID:  atomic.NewInt64(0),
+		done:    make(chan struct{}),
+	}
+	for _, o := range opts {
+		o(cli)
 	}
 	go cli.processMessages()
 	return cli
@@ -63,12 +90,26 @@ func (c *Client) Close() error {
 	return c.tx.Close()
 }
 
+// Wait waits until the client is closed. This can be triggered by the other side of the
+// transport closing or calling Close on the client.
+func (c *Client) Wait(ctx context.Context) error {
+	select {
+	case <-ctx.Done():
+		return ctx.Err()
+	case <-c.done:
+		return nil
+	}
+}
+
 // processMessages runs in the background and handles incoming messages from
 // the server.
 func (c *Client) processMessages() {
+	defer close(c.done)
+
 	for {
 		batch, err := c.tx.ReadMessage()
 		if err != nil {
+			level.Warn(c.log).Log("msg", "error reading message, closing client", "err", err)
 			return
 		}
 
@@ -86,23 +127,23 @@ func (c *Client) processMessages() {
 			case msg.Response != nil:
 				// If the response ID wasn't set, then it's a generic error.
 				if msg.Response.ID == nil {
-					// TODO(rfratto): log error / increment metric
+					level.Warn(c.log).Log("msg", "received error message", "msg", msg)
 					continue Objects
 				}
 
-				lis, ok := c.listeners.Load(convertID(msg.Response.ID))
+				msgID := convertID(msg.Response.ID)
+				lis, ok := c.listeners.Load(msgID)
 				if !ok {
 					// The listener either never existed or went away.
-					// TODO(rfratto): log warning / increment metric
+					level.Warn(c.log).Log("msg", "missing listener for message response", "id", msgID)
 					continue Objects
 				}
 
 				select {
 				case lis.(chan *txObject) <- msg:
-					// No-op
+					// Listener got message, continue as normal
 				case <-time.After(500 * time.Millisecond):
-					// TODO(rfratto): configurable timeout, log warning / increment metric
-					// when the listener doesn't read the response.
+					level.Warn(c.log).Log("msg", "unresponsive listener", "id", msgID)
 					break
 				}
 			}
@@ -110,7 +151,8 @@ func (c *Client) processMessages() {
 
 		if len(resp.Objects) > 0 {
 			if err := c.tx.SendMessage(resp); err != nil {
-				// TODO(rfratto): log error? increment metric?
+				level.Warn(c.log).Log("msg", "error sending message, closing client", "err", err)
+				return
 			}
 		}
 	}
