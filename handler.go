@@ -2,7 +2,6 @@ package jsonrpc2
 
 import (
 	"encoding/json"
-	"fmt"
 )
 
 // Handler handles an individual RPC call.
@@ -47,6 +46,4 @@ func (f HandlerFunc) ServeRPC(w ResponseWriter, r *Request) {
 
 // DefaultHandler is the default handler used by a server. It returns
 // ErrorMethodNotFound for each RPC.
-var DefaultHandler = HandlerFunc(func(w ResponseWriter, r *Request) {
-	w.WriteError(ErrorMethodNotFound, fmt.Errorf("method %s not found", r.Method))
-})
+var DefaultHandler = NewServeMux()

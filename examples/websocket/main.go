@@ -17,9 +17,9 @@ import (
 )
 
 func main() {
-	// Create a JSON-RPC 2 message handler and register a "sum" RPC handler.
-	var router jsonrpc2.Router
-	router.RegisterRoute("sum", jsonrpc2.HandlerFunc(func(w jsonrpc2.ResponseWriter, r *jsonrpc2.Request) {
+	// Create a JSON-RPC 2 multiplexer and register a "sum" RPC handler.
+	mux := jsonrpc2.NewServeMux()
+	mux.HandleFunc("sum", func(w jsonrpc2.ResponseWriter, r *jsonrpc2.Request) {
 		// Read in the parameters as a list of ints.
 		var (
 			input []int
@@ -35,7 +35,7 @@ func main() {
 			sum += n
 		}
 		w.WriteMessage(sum)
-	}))
+	})
 
 	// Start an HTTP server on :8080. For each connection, upgrade it to a
 	// websocket connection and convert that into a jsonrpc2 client.
@@ -48,6 +48,6 @@ func main() {
 
 		// Convert the websocket connection to a JSON-RPC 2.0 client. When the
 		// websocket is closed, the client will be closed too.
-		jsonrpc2.NewWebsocketClient(wsConn, &router)
+		jsonrpc2.NewWebsocketClient(wsConn, mux)
 	}))
 }
