@@ -61,8 +61,7 @@ func main() {
     w.WriteMessage(sum)
   })
 
-  // Start an HTTP server on :8080. For each connection, upgrade it to a
-  // websocket connection and convert that into a jsonrpc2 client.
+  // Start a websocket server on :8080.
   http.ListenAndServe("0.0.0.0:8080", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
     var upgrader websocket.Upgrader
     wsConn, err := upgrader.Upgrade(w, r, nil)
@@ -70,8 +69,13 @@ func main() {
       panic(err)
     }
 
-    // Convert the websocket connection to a JSON-RPC 2.0 client. When the
-    // websocket is closed, the client will be closed too.
+    // NewWebsocketClient returns a Client which will automatically handle
+    // incoming requests and send them to the provided handler. For our example,
+    // we don't need to do anything with the client, but we could invoke RPC
+    // methods on the client too for bi-directional RPCs.
+    //
+    // If the returned Client from NewWebsocketClient isn't closed, it will
+    // automatically be closed when the websocket connection shuts down.
     jsonrpc2.NewWebsocketClient(wsConn, mux)
   }))
 }
