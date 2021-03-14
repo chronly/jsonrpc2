@@ -3,38 +3,62 @@ package jsonrpc2
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 )
 
+type transportError struct {
+	Err error
+}
+
+func (te *transportError) Unwrap() error {
+	return te.Err
+}
+
+func (te *transportError) Error() string {
+	return te.Err.Error()
+}
+
 // transport is a transport for JSON-RPC 2.0 message.
 type transport struct {
 	rw io.ReadWriter
-
-	dec *json.Decoder
-	enc *json.Encoder
 }
 
 // newTransport can read and write JSON-RPC 2.0 messages over a ReadWriter.
 func newTransport(rw io.ReadWriter) *transport {
-	return &transport{
-		rw: rw,
-
-		dec: json.NewDecoder(rw),
-		enc: json.NewEncoder(rw),
-	}
+	return &transport{rw: rw}
 }
 
 // ReadMessage reads the next txMessage from the transport.
 func (t *transport) ReadMessage() (txMessage, error) {
 	var msg txMessage
-	err := t.dec.Decode(&msg)
+	err := json.NewDecoder(t.rw).Decode(&msg)
+	if err != nil {
+		var se *json.SyntaxError
+		if errors.As(err, &se) {
+			err = &transportError{Err: err}
+		}
+
+		var ue *json.UnmarshalTypeError
+		if errors.As(err, &ue) {
+			err = &transportError{Err: err}
+		}
+	}
 	return msg, err
 }
 
 // SendMessage sends a message over the transport.
 func (t *transport) SendMessage(msg txMessage) error {
-	return t.enc.Encode(&msg)
+	return json.NewEncoder(t.rw).Encode(&msg)
+}
+
+func (t *transport) SendError(id *string, err *Error) error {
+	return t.SendMessage(txMessage{
+		Objects: []*txObject{{
+			Response: &txResponse{ID: id, Error: err},
+		}},
+	})
 }
 
 // Close closes the transport. If the rw given to newTransport implements

@@ -3,6 +3,7 @@ package jsonrpc2
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net"
@@ -49,13 +50,13 @@ type Client struct {
 
 // Dial creates a connection to the target server using TCP. Handler will
 // be invoked for each request received from the other side.
-func Dial(target string, handler Handler) (*Client, error) {
+func Dial(target string, handler Handler, opts ...ClientOpt) (*Client, error) {
 	var d net.Dialer
 	nc, err := d.Dial("tcp", target)
 	if err != nil {
 		return nil, fmt.Errorf("failed diling to server: %w", err)
 	}
-	return NewClient(nc, handler), nil
+	return NewClient(nc, handler, opts...), nil
 }
 
 // NewClient creates a client and starts reading messages from the provided
@@ -93,7 +94,17 @@ func (c *Client) processMessages() {
 	for {
 		batch, err := c.tx.ReadMessage()
 		if err != nil {
-			level.Warn(c.log).Log("msg", "error reading message, closing client", "err", err)
+			var txErr *transportError
+			if errors.As(err, &txErr) {
+				_ = c.tx.SendError(nil, &Error{
+					Code:    ErrorInvalidRequest,
+					Message: err.Error(),
+				})
+				continue
+			}
+
+			level.Info(c.log).Log("msg", "closing client", "err", err)
+			_ = c.Close()
 			return
 		}
 

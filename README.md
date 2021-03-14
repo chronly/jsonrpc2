@@ -19,69 +19,58 @@ using Go's standard `net/http` package.
 ## Example
 
 ```go
+// Program websocket is an example of jsonrpc2 using websocket. It implements an
+// sum rpc service that will sum the params given to it.
+//
+// This can be tested using https://github.com/oliver006/ws-client:
+//
+//     $ ws-client ws://localhost:8080
+//     [00:00] >> {"jsonrpc": "2.0", "method": "sum", "params": [1, 2, 3], "id": "1"}
+//     [00:00] << {"jsonrpc": "2.0", "result": 6, "id": "1"}
 package main
 
 import (
-  "context"
   "encoding/json"
-  "fmt"
-  "log"
-  "net"
+  "net/http"
 
   "github.com/chronly/jsonrpc2"
+  "github.com/gorilla/websocket"
 )
 
 func main() {
-  // Start a TCP server to accept jsonrpc2 messages.
-  lis, err := net.Listen("tcp", "0.0.0.0:0")
-  if err != nil {
-    log.Fatalln(err)
-  }
-  defer lis.Close()
-
-  var (
-    srv    jsonrpc2.Server
-    router jsonrpc2.Router
-  )
-
-  // Register a function to be called any time the "Sum" rpc method is invoked.
-  router.RegisterRoute("Sum", jsonrpc2.HandlerFunc(func(w jsonrpc2.ResponseWriter, r *jsonrpc2.Request) {
-    var input []int
-    err := json.Unmarshal(r.Params, &input)
-    if err != nil {
-      w.WriteError(jsonrpc2.ErrorInvalidRequest, fmt.Errorf("invalid json: %w", err))
+  // Create a JSON-RPC 2 message handler and register a "sum" RPC handler.
+  var router jsonrpc2.Router
+  router.RegisterRoute("sum", jsonrpc2.HandlerFunc(func(w jsonrpc2.ResponseWriter, r *jsonrpc2.Request) {
+    // Read in the parameters as a list of ints.
+    var (
+      input []int
+      sum   int
+    )
+    if err := json.Unmarshal(r.Params, &input); err != nil {
+      w.WriteError(jsonrpc2.ErrorInvalidParams, err)
       return
     }
 
-    var sum int
+    // Sum then together and write back out the result.
     for _, n := range input {
       sum += n
     }
     w.WriteMessage(sum)
   }))
 
-  // Set the server's handler to our router so our callback gets invoked.
-  srv.Handler = &router
+  // Start an HTTP server on :8080. For each connection, upgrade it to a
+  // websocket connection and convert that into a jsonrpc2 client.
+  http.ListenAndServe("0.0.0.0:8080", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+    var upgrader websocket.Upgrader
+    wsConn, err := upgrader.Upgrade(w, r, nil)
+    if err != nil {
+      panic(err)
+    }
 
-  // Connect to our server as a client.
-  cli, err := jsonrpc2.Dial(lis.Addr().String())
-  if err != nil {
-    log.Fatalln(err)
-  }
-
-  // Invoke the Sum RPC method and ask it to calculate the sum of 3, 5, and 7.
-  resp, err := cli.Invoke(context.Background(), "Sum", []int{3, 5, 7})
-  if err != nil {
-    log.Fatalln(err)
-  }
-
-  var res int
-  if err := json.Unmarshal(resp, &res); err != nil {
-    log.Fatalln(err)
-  }
-
-  // Prints "Got resuslt: 15"
-  fmt.Printf("Got result: %d\n", res)
+    // Convert the websocket connection to a JSON-RPC 2.0 client. When the
+    // websocket is closed, the client will be closed too.
+    jsonrpc2.NewWebsocketClient(wsConn, &router)
+  }))
 }
 ```
 

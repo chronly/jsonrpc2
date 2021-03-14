@@ -1,4 +1,4 @@
-package websocket
+package jsonrpc2
 
 import (
 	"context"
@@ -7,12 +7,11 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	"github.com/chronly/jsonrpc2"
 	"github.com/gorilla/websocket"
 	"github.com/stretchr/testify/require"
 )
 
-func TestWebsocket(t *testing.T) {
+func TestNewWebsocketClient(t *testing.T) {
 	var (
 		upgrader websocket.Upgrader
 	)
@@ -20,7 +19,7 @@ func TestWebsocket(t *testing.T) {
 		conn, err := upgrader.Upgrade(rw, r, nil)
 		require.NoError(t, err)
 
-		jsonrpc2.NewClient(FromConn(conn), jsonrpc2.HandlerFunc(func(w jsonrpc2.ResponseWriter, r *jsonrpc2.Request) {
+		NewWebsocketClient(conn, HandlerFunc(func(w ResponseWriter, r *Request) {
 			require.Equal(t, "test", r.Method)
 			err := w.WriteMessage("Hello, world!")
 			require.NoError(t, err)
@@ -34,7 +33,7 @@ func TestWebsocket(t *testing.T) {
 	clientWS, _, err := websocket.DefaultDialer.Dial(fmt.Sprintf("ws://%s", testSrv.Listener.Addr().String()), nil)
 	require.NoError(t, err)
 
-	cli := jsonrpc2.NewClient(FromConn(clientWS), jsonrpc2.DefaultHandler)
+	cli := NewWebsocketClient(clientWS, DefaultHandler)
 	resp, err := cli.Invoke(context.Background(), "test", nil)
 	require.NoError(t, err)
 	require.Equal(t, `"Hello, world!"`, string(resp))
