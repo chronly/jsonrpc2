@@ -5,10 +5,13 @@ A full implementation of the [JSON-RPC 2.0
 specification](https://www.jsonrpc.org/specification), including support for
 request / response batches.
 
-This library is **pre 1.0** and the API is not considered stable.
+This library is **EXPERIMENTAL** and the API is not yet considered stable.
 
 `jsonrpc2` is designed to provide an API similar to what you would experience
 using Go's standard `net/http` package.
+
+`jsonrpc2` works with any `io.ReadWriter`, which enables you to use it over any
+transport, from tcp and websocket to stdin/stdout.
 
 ## Roadmap
 
