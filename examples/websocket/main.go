@@ -12,7 +12,7 @@ import (
 	"encoding/json"
 	"net/http"
 
-	"github.com/chronly/jsonrpc2"
+	"github.com/crtv-io/jsonrpc2"
 	"github.com/gorilla/websocket"
 )
 

@@ -1,5 +1,5 @@
 # jsonrpc2
-[![Go Reference](https://pkg.go.dev/badge/github.com/chronly/jsonrpc2.svg)](https://pkg.go.dev/github.com/chronly/jsonrpc2)
+[![Go Reference](https://pkg.go.dev/badge/github.com/crtv-io/jsonrpc2.svg)](https://pkg.go.dev/github.com/crtv-io/jsonrpc2)
 
 A full implementation of the [JSON-RPC 2.0
 specification](https://www.jsonrpc.org/specification), including support for
@@ -36,7 +36,7 @@ import (
   "encoding/json"
   "net/http"
 
-  "github.com/chronly/jsonrpc2"
+  "github.com/crtv-io/jsonrpc2"
   "github.com/gorilla/websocket"
 )
 

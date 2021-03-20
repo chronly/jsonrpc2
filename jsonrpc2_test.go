@@ -18,8 +18,8 @@ func TestJSONRPC2(t *testing.T) {
 	}
 	defer lis.Close()
 
-	var router Router
-	router.RegisterRoute("sum", HandlerFunc(func(w ResponseWriter, r *Request) {
+	mux := NewServeMux()
+	mux.HandleFunc("sum", func(w ResponseWriter, r *Request) {
 		var nums []int
 		err := json.Unmarshal(r.Params, &nums)
 		if err != nil {
@@ -33,9 +33,9 @@ func TestJSONRPC2(t *testing.T) {
 		}
 
 		w.WriteMessage(sum)
-	}))
+	})
 
-	srv := Server{Handler: &router}
+	srv := Server{Handler: mux}
 	go srv.Serve(lis)
 
 	cli, err := Dial(lis.Addr().String(), DefaultHandler)
