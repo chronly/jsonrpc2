@@ -18,6 +18,9 @@ type Server struct {
 	// OnClient may be provided to handle new connections.
 	OnClient func(c *Client)
 
+	// OnClientDisconnect may be used to handle disconnected clients.
+	OnClientDisconnect func(c *Client)
+
 	mut       sync.Mutex
 	listeners map[*net.Listener]struct{}
 	clis      map[*Client]struct{}
@@ -61,6 +64,11 @@ func (s *Server) onConn(conn net.Conn, handler Handler) {
 	}
 	s.trackClient(cli, true)
 	defer s.trackClient(cli, false)
+
+	<-cli.Done()
+	if s.OnClientDisconnect != nil {
+		go s.OnClientDisconnect(cli)
+	}
 }
 
 func (s *Server) trackListener(lis *net.Listener, add bool) bool {

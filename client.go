@@ -46,6 +46,8 @@ type Client struct {
 
 	nextID  *atomic.Int64
 	handler Handler
+
+	done chan struct{}
 }
 
 // Dial creates a connection to the target server using TCP. Handler will
@@ -75,6 +77,8 @@ func NewClient(rw io.ReadWriter, handler Handler, opts ...ClientOpt) *Client {
 		tx:      newTransport(rw),
 		handler: handler,
 		nextID:  atomic.NewInt64(0),
+
+		done: make(chan struct{}),
 	}
 	for _, o := range opts {
 		o(cli)
@@ -88,9 +92,16 @@ func (c *Client) Close() error {
 	return c.tx.Close()
 }
 
+// Done returns a channel that indicates when the client has closed.
+func (c *Client) Done() <-chan struct{} {
+	return c.done
+}
+
 // processMessages runs in the background and handles incoming messages from
 // the server.
 func (c *Client) processMessages() {
+	defer close(c.done)
+
 	for {
 		batch, err := c.tx.ReadMessage()
 		if err != nil {
