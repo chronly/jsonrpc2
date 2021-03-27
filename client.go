@@ -7,7 +7,6 @@ import (
 	"fmt"
 	"io"
 	"net"
-	"strconv"
 	"sync"
 	"time"
 
@@ -107,7 +106,7 @@ func (c *Client) processMessages() {
 		if err != nil {
 			var txErr *transportError
 			if errors.As(err, &txErr) {
-				_ = c.tx.SendError(nil, &Error{
+				_ = c.tx.SendError(newUndefinedID(), &Error{
 					Code:    ErrorInvalidRequest,
 					Message: err.Error(),
 				})
@@ -131,13 +130,14 @@ func (c *Client) processMessages() {
 					resp.Objects = append(resp.Objects, &txObject{Response: r})
 				}
 			case msg.Response != nil:
-				// If the response ID wasn't set, then it's a generic error.
-				if msg.Response.ID == nil {
+				msgID := msg.Response.ID
+
+				// If the response ID is undefined, then it's a generic error.
+				if msgID.IsUndefined() {
 					level.Warn(c.log).Log("msg", "received error message", "msg", msg)
 					continue Objects
 				}
 
-				msgID := convertID(msg.Response.ID)
 				lis, ok := c.listeners.Load(msgID)
 				if !ok {
 					// The listener either never existed or went away.
@@ -162,14 +162,6 @@ func (c *Client) processMessages() {
 			}
 		}
 	}
-}
-
-func convertID(in *string) int64 {
-	if in == nil {
-		return -1
-	}
-	res, _ := strconv.ParseInt(*in, 10, 64)
-	return res
 }
 
 // handleRequest handles an individual request.
@@ -270,8 +262,7 @@ func (c *Client) Invoke(ctx context.Context, method string, msg interface{}) (js
 	}
 
 	var (
-		msgID   = c.nextID.Inc()
-		msgText = strconv.FormatInt(msgID, 10)
+		msgID = newNumberID(c.nextID.Inc())
 
 		respCh = make(chan *txObject, 1)
 	)
@@ -284,7 +275,7 @@ func (c *Client) Invoke(ctx context.Context, method string, msg interface{}) (js
 		Objects: []*txObject{{
 			Request: &txRequest{
 				Notification: false,
-				ID:           &msgText,
+				ID:           msgID,
 				Method:       method,
 				Params:       body,
 			},
@@ -344,8 +335,7 @@ func (b *Batch) Invoke(method string, msg interface{}) (*json.RawMessage, error)
 	}
 
 	var (
-		msgID   = b.cli.nextID.Inc()
-		msgText = strconv.FormatInt(msgID, 10)
+		msgID = newNumberID(b.cli.nextID.Inc())
 
 		result json.RawMessage
 		respCh = make(chan *txObject, 1)
@@ -357,7 +347,7 @@ func (b *Batch) Invoke(method string, msg interface{}) (*json.RawMessage, error)
 	b.msg.Objects = append(b.msg.Objects, &txObject{
 		Request: &txRequest{
 			Notification: false,
-			ID:           &msgText,
+			ID:           msgID,
 			Method:       method,
 			Params:       body,
 		},

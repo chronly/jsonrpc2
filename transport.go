@@ -53,7 +53,7 @@ func (t *transport) SendMessage(msg txMessage) error {
 	return json.NewEncoder(t.rw).Encode(&msg)
 }
 
-func (t *transport) SendError(id *string, err *Error) error {
+func (t *transport) SendError(id id, err *Error) error {
 	return t.SendMessage(txMessage{
 		Objects: []*txObject{{
 			Response: &txResponse{ID: id, Error: err},
@@ -153,7 +153,7 @@ func (o *txObject) MarshalJSON() ([]byte, error) {
 type txRequest struct {
 	// If Notification is true, then ID must be nil.
 	Notification bool
-	ID           *string
+	ID           id
 	Method       string
 	Params       json.RawMessage
 }
@@ -163,7 +163,7 @@ func (r *txRequest) UnmarshalJSON(bb []byte) error {
 		Version string          `json:"jsonrpc"`
 		Method  string          `json:"method"`
 		Params  json.RawMessage `json:"params"`
-		ID      txID            `json:"id"`
+		ID      id              `json:"id"`
 	}
 	var p plain
 
@@ -177,12 +177,10 @@ func (r *txRequest) UnmarshalJSON(bb []byte) error {
 		return fmt.Errorf("invalid jsonrpc version: %s", p.Version)
 	}
 
-	r.Notification = !p.ID.Set
+	r.Notification = p.ID.IsUndefined()
 	r.Method = p.Method
 	r.Params = p.Params
-	if p.ID.Set {
-		r.ID = p.ID.Value
-	}
+	r.ID = p.ID
 	return nil
 }
 
@@ -203,7 +201,7 @@ func (r *txRequest) MarshalJSON() ([]byte, error) {
 			Version string          `json:"jsonrpc"`
 			Method  string          `json:"method"`
 			Params  json.RawMessage `json:"params"`
-			ID      *string         `json:"id"`
+			ID      id              `json:"id"`
 		}
 		var p plain
 		p.Version = "2.0"
@@ -216,7 +214,7 @@ func (r *txRequest) MarshalJSON() ([]byte, error) {
 
 type txResponse struct {
 	// ID must be nil the request couldn't be parsed.
-	ID     *string
+	ID     id
 	Result json.RawMessage
 	Error  *Error
 }
@@ -226,7 +224,7 @@ func (r *txResponse) UnmarshalJSON(bb []byte) error {
 		Version string          `json:"jsonrpc"`
 		Result  json.RawMessage `json:"result"`
 		Error   *Error          `json:"error"`
-		ID      *string         `json:"id"`
+		ID      id              `json:"id"`
 	}
 	var p plain
 
@@ -263,42 +261,29 @@ func (r *txResponse) MarshalJSON() ([]byte, error) {
 		type plain struct {
 			Version string          `json:"jsonrpc"`
 			Result  json.RawMessage `json:"result"`
-			ID      *string         `json:"id"`
+			ID      *id             `json:"id,omitempty"`
 		}
 		var p plain
 		p.Version = "2.0"
 		p.Result = r.Result
-		p.ID = r.ID
+		p.ID = &r.ID
+		if r.ID.IsUndefined() {
+			p.ID = nil
+		}
 		return json.Marshal(p)
 	} else {
 		type plain struct {
-			Version string  `json:"jsonrpc"`
-			Error   *Error  `json:"error"`
-			ID      *string `json:"id"`
+			Version string `json:"jsonrpc"`
+			Error   *Error `json:"error"`
+			ID      *id    `json:"id,omitempty"`
 		}
 		var p plain
 		p.Version = "2.0"
 		p.Error = r.Error
-		p.ID = r.ID
+		p.ID = &r.ID
+		if r.ID.IsUndefined() {
+			p.ID = nil
+		}
 		return json.Marshal(p)
 	}
-}
-
-type txID struct {
-	Set   bool
-	Value *string
-}
-
-func (id *txID) UnmarshalJSON(bb []byte) error {
-	id.Set = true
-	var val *string
-	if err := json.Unmarshal(bb, &val); err != nil {
-		return err
-	}
-	id.Value = val
-	return nil
-}
-
-func (id *txID) MarshalJSON() ([]byte, error) {
-	return json.Marshal(id.Value)
 }

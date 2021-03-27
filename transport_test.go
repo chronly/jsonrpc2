@@ -18,7 +18,7 @@ func TestTransport_Marshal(t *testing.T) {
 			name: "request rpc",
 			input: &txRequest{
 				Notification: false,
-				ID:           nil,
+				ID:           newUndefinedID(),
 				Method:       "hello",
 				Params:       json.RawMessage(`[0,1,2]`),
 			},
@@ -33,7 +33,7 @@ func TestTransport_Marshal(t *testing.T) {
 			name: "request with id",
 			input: &txRequest{
 				Notification: false,
-				ID:           strPointer("12345"),
+				ID:           newStringID("12345"),
 				Method:       "hello",
 				Params:       json.RawMessage(`{}`),
 			},
@@ -61,7 +61,7 @@ func TestTransport_Marshal(t *testing.T) {
 		{
 			name: "success response",
 			input: &txResponse{
-				ID:     nil,
+				ID:     newNullID(),
 				Result: json.RawMessage(`{}`),
 			},
 			expect: `{
@@ -73,7 +73,7 @@ func TestTransport_Marshal(t *testing.T) {
 		{
 			name: "error response",
 			input: &txResponse{
-				ID: strPointer("12345"),
+				ID: newStringID("12345"),
 				Error: &Error{
 					Code:    ErrorInternal,
 					Message: "some error",
@@ -105,10 +105,23 @@ func TestTransport_Marshal(t *testing.T) {
 			}`,
 		},
 		{
-			name: "response object",
+			name: "response object undefined ID",
 			input: &txObject{
 				Response: &txResponse{
 					Result: json.RawMessage(`[]`),
+				},
+			},
+			expect: `{
+				"jsonrpc": "2.0",
+				"result": []
+			}`,
+		},
+		{
+			name: "response object null ID",
+			input: &txObject{
+				Response: &txResponse{
+					Result: json.RawMessage(`[]`),
+					ID:     newNullID(),
 				},
 			},
 			expect: `{
@@ -123,7 +136,7 @@ func TestTransport_Marshal(t *testing.T) {
 			input: &txMessage{
 				Objects: []*txObject{{
 					Request: &txRequest{
-						ID:     strPointer("1"),
+						ID:     newStringID("1"),
 						Method: "hello",
 						Params: json.RawMessage(`[]`),
 					},
@@ -142,7 +155,7 @@ func TestTransport_Marshal(t *testing.T) {
 				Batched: true,
 				Objects: []*txObject{{
 					Request: &txRequest{
-						ID:     strPointer("1"),
+						ID:     newStringID("1"),
 						Method: "hello",
 						Params: json.RawMessage(`[]`),
 					},
@@ -188,7 +201,7 @@ func TestTransport_Unmarshal(t *testing.T) {
 			},
 			expect: &txRequest{
 				Notification: false,
-				ID:           nil,
+				ID:           newNullID(),
 				Method:       "hello",
 				Params:       json.RawMessage(`[0,1,2]`),
 			},
@@ -208,7 +221,7 @@ func TestTransport_Unmarshal(t *testing.T) {
 			},
 			expect: &txRequest{
 				Notification: false,
-				ID:           strPointer("12345"),
+				ID:           newStringID("12345"),
 				Method:       "hello",
 				Params:       json.RawMessage(`{}`),
 			},
@@ -245,7 +258,7 @@ func TestTransport_Unmarshal(t *testing.T) {
 				return &msg, err
 			},
 			expect: &txResponse{
-				ID:     nil,
+				ID:     newNullID(),
 				Result: json.RawMessage(`{}`),
 			},
 		},
@@ -265,7 +278,7 @@ func TestTransport_Unmarshal(t *testing.T) {
 				return &msg, err
 			},
 			expect: &txResponse{
-				ID: strPointer("12345"),
+				ID: newStringID("12345"),
 				Error: &Error{
 					Code:    ErrorInternal,
 					Message: "some error",
@@ -294,7 +307,24 @@ func TestTransport_Unmarshal(t *testing.T) {
 			},
 		},
 		{
-			name: "response object",
+			name: "response object undefined ID",
+			input: `{
+				"jsonrpc": "2.0",
+				"result": []
+			}`,
+			unmarshal: func(bb []byte) (interface{}, error) {
+				var msg txObject
+				err := json.Unmarshal(bb, &msg)
+				return &msg, err
+			},
+			expect: &txObject{
+				Response: &txResponse{
+					Result: json.RawMessage(`[]`),
+				},
+			},
+		},
+		{
+			name: "response object null ID",
 			input: `{
 				"jsonrpc": "2.0",
 				"result": [],
@@ -308,6 +338,7 @@ func TestTransport_Unmarshal(t *testing.T) {
 			expect: &txObject{
 				Response: &txResponse{
 					Result: json.RawMessage(`[]`),
+					ID:     newNullID(),
 				},
 			},
 		},
@@ -328,7 +359,7 @@ func TestTransport_Unmarshal(t *testing.T) {
 			expect: &txMessage{
 				Objects: []*txObject{{
 					Request: &txRequest{
-						ID:     strPointer("1"),
+						ID:     newStringID("1"),
 						Method: "hello",
 						Params: json.RawMessage(`[]`),
 					},
@@ -352,7 +383,7 @@ func TestTransport_Unmarshal(t *testing.T) {
 				Batched: true,
 				Objects: []*txObject{{
 					Request: &txRequest{
-						ID:     strPointer("1"),
+						ID:     newStringID("1"),
 						Method: "hello",
 						Params: json.RawMessage(`[]`),
 					},
@@ -368,8 +399,4 @@ func TestTransport_Unmarshal(t *testing.T) {
 			require.Equal(t, tc.expect, output)
 		})
 	}
-}
-
-func strPointer(in string) *string {
-	return &in
 }
