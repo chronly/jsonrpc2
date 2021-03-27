@@ -56,7 +56,7 @@ func Dial(target string, handler Handler, opts ...ClientOpt) (*Client, error) {
 	var d net.Dialer
 	nc, err := d.Dial("tcp", target)
 	if err != nil {
-		return nil, fmt.Errorf("failed diling to server: %w", err)
+		return nil, fmt.Errorf("failed dialing to server: %w", err)
 	}
 	return NewClient(nc, handler, opts...), nil
 }
