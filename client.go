@@ -32,7 +32,8 @@ func WithClientLogger(l log.Logger) ClientOpt {
 type Client struct {
 	log log.Logger
 
-	tx *transport
+	txMut sync.Mutex
+	tx    *transport
 
 	// listeners holds channels waiting for a response to a specific
 	// message ID. It is implemented a a map of int64 to a chan of
@@ -106,10 +107,12 @@ func (c *Client) processMessages() {
 		if err != nil {
 			var txErr *transportError
 			if errors.As(err, &txErr) {
+				c.txMut.Lock()
 				_ = c.tx.SendError(newUndefinedID(), &Error{
 					Code:    ErrorInvalidRequest,
 					Message: err.Error(),
 				})
+				c.txMut.Unlock()
 				continue
 			}
 
@@ -118,48 +121,54 @@ func (c *Client) processMessages() {
 			return
 		}
 
-		var resp txMessage
-		resp.Batched = batch.Batched
+		go c.handleBatch(batch)
+	}
+}
 
-	Objects:
-		for _, msg := range batch.Objects {
-			switch {
-			case msg.Request != nil:
-				r := c.handleRequest(msg.Request)
-				if r != nil {
-					resp.Objects = append(resp.Objects, &txObject{Response: r})
-				}
-			case msg.Response != nil:
-				msgID := msg.Response.ID
+func (c *Client) handleBatch(batch txMessage) {
+	var resp txMessage
+	resp.Batched = batch.Batched
 
-				// If the response ID is undefined, then it's a generic error.
-				if msgID.IsUndefined() {
-					level.Warn(c.log).Log("msg", "received error message", "msg", msg)
-					continue Objects
-				}
+Objects:
+	for _, msg := range batch.Objects {
+		switch {
+		case msg.Request != nil:
+			r := c.handleRequest(msg.Request)
+			if r != nil {
+				resp.Objects = append(resp.Objects, &txObject{Response: r})
+			}
+		case msg.Response != nil:
+			msgID := msg.Response.ID
 
-				lis, ok := c.listeners.Load(msgID)
-				if !ok {
-					// The listener either never existed or went away.
-					level.Warn(c.log).Log("msg", "missing listener for message response", "id", msgID)
-					continue Objects
-				}
+			// If the response ID is undefined, then it's a generic error.
+			if msgID.IsUndefined() {
+				level.Warn(c.log).Log("msg", "received error message", "msg", msg)
+				continue Objects
+			}
 
-				select {
-				case lis.(chan *txObject) <- msg:
-					// Listener got message, continue as normal
-				case <-time.After(500 * time.Millisecond):
-					level.Warn(c.log).Log("msg", "unresponsive listener", "id", msgID)
-					break
-				}
+			lis, ok := c.listeners.Load(msgID)
+			if !ok {
+				// The listener either never existed or went away.
+				level.Warn(c.log).Log("msg", "missing listener for message response", "id", msgID)
+				continue Objects
+			}
+
+			select {
+			case lis.(chan *txObject) <- msg:
+				// Listener got message, continue as normal
+			case <-time.After(500 * time.Millisecond):
+				level.Warn(c.log).Log("msg", "unresponsive listener", "id", msgID)
+				break
 			}
 		}
+	}
 
-		if len(resp.Objects) > 0 {
-			if err := c.tx.SendMessage(resp); err != nil {
-				level.Warn(c.log).Log("msg", "error sending message, closing client", "err", err)
-				return
-			}
+	if len(resp.Objects) > 0 {
+		c.txMut.Lock()
+		defer c.txMut.Unlock()
+		if err := c.tx.SendMessage(resp); err != nil {
+			level.Warn(c.log).Log("msg", "error sending message, closing client", "err", err)
+			return
 		}
 	}
 }
@@ -238,6 +247,8 @@ func (c *Client) Notify(method string, msg interface{}) error {
 		return err
 	}
 
+	c.txMut.Lock()
+	defer c.txMut.Unlock()
 	return c.tx.SendMessage(txMessage{
 		Batched: false,
 		Objects: []*txObject{{
@@ -270,6 +281,7 @@ func (c *Client) Invoke(ctx context.Context, method string, msg interface{}) (js
 	c.listeners.Store(msgID, respCh)
 	defer c.listeners.Delete(msgID)
 
+	c.txMut.Lock()
 	err = c.tx.SendMessage(txMessage{
 		Batched: false,
 		Objects: []*txObject{{
@@ -281,6 +293,7 @@ func (c *Client) Invoke(ctx context.Context, method string, msg interface{}) (js
 			},
 		}},
 	})
+	c.txMut.Unlock()
 	if err != nil {
 		return nil, err
 	}
