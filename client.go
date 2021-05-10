@@ -188,6 +188,10 @@ func (c *Client) handleRequest(req *txRequest) *txResponse {
 		Client: c,
 	})
 
+	if ww.notification {
+		return nil
+	}
+
 	if ww.resp.Result == nil {
 		ww.resp.Result = []byte{}
 	}
