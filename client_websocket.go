@@ -1,6 +1,8 @@
 package jsonrpc2
 
 import (
+	"errors"
+	"io"
 	"sync"
 
 	"github.com/gorilla/websocket"
@@ -20,17 +22,32 @@ type wsReadWriter struct {
 	writeMtx sync.Mutex
 
 	conn *websocket.Conn
+
+	curReader io.Reader
 }
 
 func (rw *wsReadWriter) Read(p []byte) (n int, err error) {
 	rw.readMtx.Lock()
 	defer rw.readMtx.Unlock()
 
-	_, r, err := rw.conn.NextReader()
-	if err != nil {
+	for {
+		if rw.curReader == nil {
+			var err error
+			_, rw.curReader, err = rw.conn.NextReader()
+			if err != nil {
+				return n, err
+			}
+		}
+
+		read, err := rw.curReader.Read(p)
+		n += read
+
+		if errors.Is(err, io.EOF) {
+			rw.curReader = nil
+			continue
+		}
 		return n, err
 	}
-	return r.Read(p)
 }
 
 func (rw *wsReadWriter) Write(p []byte) (n int, err error) {
