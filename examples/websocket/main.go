@@ -4,7 +4,7 @@
 // This can be tested using https://github.com/oliver006/ws-client:
 //
 //     $ ws-client ws://localhost:8080
-//     [00:00] >> {"jsonrpc": "2.0", "method": "sum", "params": [1, 2, 3], "id": "1"}
+//     [00:00] >> {"jsonrpc": "2.0", "method": "sum", "params": {"numbers": [1, 2, 3]}, "id": "1"}
 //     [00:00] << {"jsonrpc": "2.0", "result": 6, "id": "1"}
 package main
 
@@ -16,13 +16,18 @@ import (
 	"github.com/gorilla/websocket"
 )
 
+// SumParams holds expected parameters for the sum RPC.
+type SumParams struct {
+	Numbers []int `json:"numbers"`
+}
+
 func main() {
 	// Create a JSON-RPC 2 multiplexer and register a "sum" RPC handler.
 	mux := jsonrpc2.NewServeMux()
 	mux.HandleFunc("sum", func(w jsonrpc2.ResponseWriter, r *jsonrpc2.Request) {
 		// Read in the parameters as a list of ints.
 		var (
-			input []int
+			input SumParams
 			sum   int
 		)
 		if err := json.Unmarshal(r.Params, &input); err != nil {
@@ -31,7 +36,7 @@ func main() {
 		}
 
 		// Sum then together and write back out the result.
-		for _, n := range input {
+		for _, n := range input.Numbers {
 			sum += n
 		}
 		w.WriteMessage(sum)
